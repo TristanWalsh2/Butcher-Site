@@ -7,6 +7,9 @@ export default function App() {
   const [categories, setCategories] = useState(["All"]);
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  
+  // NEW: Cart Memory
+  const [cart, setCart] = useState([]);
 
   useEffect(() => {
     const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTDAe_Uy88zMq7ORLXp-yAvZVPQ4sAVBB6_uFqgcPRC-YIXpM0qmUxLKAVGXWv8vLuYuRPOJOiZA84_/pub?output=csv";
@@ -48,8 +51,8 @@ export default function App() {
           name: r[1],
           description: r[2],
           price: r[3],
-          inStock: r[4] !== 'FALSE', // Reads your new checkboxes (True by default)
-          imageUrl: r[5] || null // Reads your new Image URL column
+          inStock: r[4] !== 'FALSE',
+          imageUrl: r[5] || null
         }));
 
         setMenuItems(items);
@@ -69,14 +72,34 @@ export default function App() {
     ? menuItems 
     : menuItems.filter(item => item.category === activeCategory);
 
+  // --- NEW: CART FUNCTIONS ---
+  const addToCart = (item) => {
+    const existingItem = cart.find(c => c.name === item.name);
+    if (existingItem) {
+      setCart(cart.map(c => c.name === item.name ? { ...c, qty: c.qty + 1 } : c));
+    } else {
+      setCart([...cart, { ...item, qty: 1 }]);
+    }
+  };
+
+  const removeFromCart = (itemName) => {
+    setCart(cart.filter(item => item.name !== itemName));
+  };
+
+  const cartTotal = cart.reduce((total, item) => {
+    const priceNum = Number(item.price.replace(/[^0-9.-]+/g,""));
+    return total + (isNaN(priceNum) ? 0 : priceNum) * item.qty;
+  }, 0);
+
+  // Formats the cart into a readable list for Formspree
+  const orderDetailsString = cart.map(item => `${item.qty}x ${item.name}`).join("\n");
+
   const getCollectionTimes = () => {
     const now = new Date();
     const currentHour = now.getHours();
-    
     const openingHour = 9;
     const closingHour = 18;
     const leadTime = 2;
-
     const earliestHour = currentHour + leadTime;
     
     const todaySlots = [];
@@ -125,7 +148,6 @@ export default function App() {
               <div key={index} className={`menu-card ${!item.inStock ? 'out-of-stock' : ''}`}>
                 {!item.inStock && <div className="stock-badge">SOLD OUT</div>}
                 
-                {/* Dynamically loads image if you paste a link in the spreadsheet */}
                 {item.imageUrl && (
                   <img src={item.imageUrl} alt={item.name} className="item-image" />
                 )}
@@ -135,6 +157,13 @@ export default function App() {
                   <span className="item-price">{item.price}</span>
                 </div>
                 <p className="item-description">{item.description}</p>
+                
+                {/* NEW: Add to Cart Button */}
+                {item.inStock && (
+                  <button className="add-btn" onClick={() => addToCart(item)}>
+                    + Add to Order
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -145,8 +174,34 @@ export default function App() {
 
       <div className="checkout-section">
         <h2>Complete Your Order</h2>
+
+        {/* NEW: Cart Summary View */}
+        {cart.length > 0 ? (
+          <div className="cart-section">
+            <h3 style={{fontFamily: "'Levi Brush', cursive", margin: "0 0 15px 0", letterSpacing: "1px"}}>Your Basket</h3>
+            {cart.map((item, index) => (
+              <div key={index} className="cart-item">
+                <div className="cart-item-details">
+                  <span className="cart-item-name">{item.qty}x {item.name}</span>
+                  <button className="remove-btn" onClick={() => removeFromCart(item.name)}>Remove</button>
+                </div>
+                <span>€{(Number(item.price.replace(/[^0-9.-]+/g,"")) * item.qty).toFixed(2)}</span>
+              </div>
+            ))}
+            <div className="cart-total-row">
+              <span>Total:</span>
+              <span>€{cartTotal.toFixed(2)}</span>
+            </div>
+          </div>
+        ) : (
+          <p style={{textAlign: "center", color: "#aaa", marginBottom: "30px"}}>Your basket is empty. Add some items above!</p>
+        )}
         
         <form action="https://formspree.io/f/xyewykka" method="POST" className="checkout-form">
+          {/* THESE HIDDEN INPUTS SEND THE CART TO YOU */}
+          <input type="hidden" name="Order Details" value={orderDetailsString} />
+          <input type="hidden" name="Total Price" value={`€${cartTotal.toFixed(2)}`} />
+
           <input type="text" name="Name" placeholder="Your Name" required />
           <input type="tel" name="Phone" placeholder="Phone Number" required />
           
@@ -166,7 +221,10 @@ export default function App() {
             We will only use this number to text you when your order is ready for collection.
           </p>
           
-          <button type="submit" className="submit-btn">Place Order</button>
+          {/* Disables the button if the cart is empty */}
+          <button type="submit" className="submit-btn" disabled={cart.length === 0}>
+            {cart.length === 0 ? "Add Items to Order" : "Place Order"}
+          </button>
         </form>
       </div>
     </div>
