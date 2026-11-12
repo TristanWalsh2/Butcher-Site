@@ -32,7 +32,7 @@ export default function App() {
             current = '';
           } else if (char === '\n' && !inQuotes) {
             row.push(current.trim());
-            if (row.length > 1) rows.push(row);
+            if (row.length > 0) rows.push(row);
             row = [];
             current = '';
           } else {
@@ -40,14 +40,16 @@ export default function App() {
           }
         }
         row.push(current.trim());
-        if (row.length > 1) rows.push(row);
+        if (row.length > 0) rows.push(row);
 
         const dataRows = rows.slice(1);
         const items = dataRows.map(r => ({
           category: r[0],
           name: r[1],
           description: r[2],
-          price: r[3]
+          price: r[3],
+          inStock: r[4] !== 'FALSE', // Reads your new checkboxes (True by default)
+          imageUrl: r[5] || null // Reads your new Image URL column
         }));
 
         setMenuItems(items);
@@ -67,12 +69,10 @@ export default function App() {
     ? menuItems 
     : menuItems.filter(item => item.category === activeCategory);
 
-  // --- SMART TIME GENERATOR (2-HOUR LEAD TIME) ---
   const getCollectionTimes = () => {
     const now = new Date();
     const currentHour = now.getHours();
     
-    // Customize your shop hours here (9 = 9:00 AM, 18 = 6:00 PM)
     const openingHour = 9;
     const closingHour = 18;
     const leadTime = 2;
@@ -80,7 +80,6 @@ export default function App() {
     const earliestHour = currentHour + leadTime;
     
     const todaySlots = [];
-    // Only generate slots for today if the 2-hour lead time is before closing
     if (earliestHour < closingHour) {
       for (let h = Math.max(earliestHour, openingHour); h < closingHour; h++) {
         todaySlots.push(`Today at ${h}:00`);
@@ -123,7 +122,14 @@ export default function App() {
         ) : (
           <div className="menu-grid">
             {displayedItems.map((item, index) => (
-              <div key={index} className="menu-card">
+              <div key={index} className={`menu-card ${!item.inStock ? 'out-of-stock' : ''}`}>
+                {!item.inStock && <div className="stock-badge">SOLD OUT</div>}
+                
+                {/* Dynamically loads image if you paste a link in the spreadsheet */}
+                {item.imageUrl && (
+                  <img src={item.imageUrl} alt={item.name} className="item-image" />
+                )}
+
                 <div className="menu-header">
                   <h3 className="item-name">{item.name}</h3>
                   <span className="item-price">{item.price}</span>
@@ -144,7 +150,6 @@ export default function App() {
           <input type="text" name="Name" placeholder="Your Name" required />
           <input type="tel" name="Phone" placeholder="Phone Number" required />
           
-          {/* NEW SMART COLLECTION DROPDOWN */}
           <select name="Collection Time" required defaultValue="">
             <option value="" disabled>Select Collection Time (2hr Notice Required)</option>
             {todaySlots.length > 0 && (
