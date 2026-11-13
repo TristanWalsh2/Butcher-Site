@@ -64,7 +64,7 @@ export default function App() {
       const uniqueCats = ["All", ...new Set(items.map(item => item.category).filter(Boolean))];
       setCategories(uniqueCats);
 
-      // Parse Team (NEW: Smart parser that ignores commas inside bios)
+      // Parse Team (Smart parser that ignores commas inside bios)
       if (teamText) {
         const cleanTeam = teamText.replace(/\r/g, '');
         const teamRows = [];
@@ -97,7 +97,7 @@ export default function App() {
         const teamData = teamRows.slice(1).map(r => ({
           name: r[0],
           photo: r[1] || "https://via.placeholder.com/150/2a2d32/f5f2eb?text=Photo",
-          bio: r[2] // This will now grab the full sentence properly!
+          bio: r[2]
         })).filter(member => member.name);
         setTeamMembers(teamData);
       }
@@ -182,7 +182,7 @@ export default function App() {
     e.preventDefault();
     const formData = new FormData(e.target);
 
-    fetch("https://script.google.com/macros/s/AKfycbwp98KOFUAeg8S6GgitUo8yY9dRIRWzUEMF7PkXWiLWtrt5OqhEOWFhDhwPo-rr1EhT4Q/exec", {
+    fetch("https://script.google.com/macros/s/AKfycbxXUgM--MCcWddq7K5IGkRQxOkHkACfjR0XWAMAIsfakdsRwM9htPD8dTvM7Tu7x26_4A/exec", {
       method: "POST",
       mode: "no-cors",
       body: formData,
