@@ -191,6 +191,7 @@ body {
   align-items: center; 
   gap: 20px; 
   text-align: left; 
+  min-height: auto; /* Ensures the box stretches vertically to fit content */
 }
 
 .team-photo {
