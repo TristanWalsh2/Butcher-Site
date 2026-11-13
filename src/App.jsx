@@ -14,7 +14,7 @@ export default function App() {
     // Menu Data Fetch
     const menuSheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTDAe_Uy88zMq7ORLXp-yAvZVPQ4sAVBB6_uFqgcPRC-YIXpM0qmUxLKAVGXWv8vLuYuRPOJOiZA84_/pub?output=csv";
 
-    // Team Data Fetch (Your specific CSV link is now hardcoded here)
+    // Team Data Fetch (Your specific CSV link)
     const teamSheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTDAe_Uy88zMq7ORLXp-yAvZVPQ4sAVBB6_uFqgcPRC-YIXpM0qmUxLKAVGXWv8vLuYuRPOJOiZA84_/pub?gid=987654321&single=true&output=csv";
 
     const fetchMenu = fetch(menuSheetUrl).then(res => res.text());
@@ -60,7 +60,7 @@ export default function App() {
         price: r[3],
         inStock: r[4] !== 'FALSE',
         imageUrl: r[5] || null,
-        allergens: r[6] || null // Added Allergens column
+        allergens: r[6] || null
       }));
 
       setMenuItems(items);
@@ -106,18 +106,16 @@ export default function App() {
 
   const orderDetailsString = cart.map(item => `${item.qty}x ${item.name}`).join("\n");
 
-  // --- NEW: ADVANCED TIME CALCULATION ENGINE ---
   const getCollectionTimes = () => {
     const now = new Date();
-    // 2 Hour lead time enforced to the minute
     const earliestTime = new Date(now.getTime() + 2 * 60 * 60 * 1000); 
     
     const generateSlots = (date, isToday) => {
       const dayOfWeek = date.getDay();
-      if (dayOfWeek === 0) return []; // No Sunday Collection
+      if (dayOfWeek === 0) return []; 
 
       let startHour = 9; 
-      if (dayOfWeek === 1) startHour = 13; // Monday starts at 1pm
+      if (dayOfWeek === 1) startHour = 13; 
 
       const closingHour = 18;
       const slots = [];
@@ -143,11 +141,10 @@ export default function App() {
 
     const todaySlots = generateSlots(now, true);
     
-    // Calculate tomorrow (skip Sunday)
     let nextDay = new Date(now);
     nextDay.setDate(nextDay.getDate() + 1);
     if (nextDay.getDay() === 0) {
-      nextDay.setDate(nextDay.getDate() + 1); // Bump Sunday to Monday
+      nextDay.setDate(nextDay.getDate() + 1); 
     }
     const nextDaySlots = generateSlots(nextDay, false);
 
@@ -155,6 +152,25 @@ export default function App() {
   };
 
   const { todaySlots, nextDaySlots } = getCollectionTimes();
+
+  // --- NEW: GOOGLE APPS SCRIPT CHECKOUT ENGINE ---
+  const handleCheckout = (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+
+    // This calls your new unlimited Google Script
+    fetch("https://script.google.com/macros/s/AKfycbwp98KOFUAeg8S6GgitUo8yY9dRIRWzUEMF7PkXWiLWtrt5OqhEOWFhDhwPo-rr1EhT4Q/exec", {
+      method: "POST",
+      mode: "no-cors",
+      body: formData,
+    }).then(() => {
+      alert("Order placed successfully! We will text you when it's ready.");
+      setCart([]); // Instantly empty the basket
+      e.target.reset(); // Reset the form fields
+    }).catch(err => {
+      alert("There was an issue placing your order. Please call the shop.");
+    });
+  };
 
   return (
     <div className="app-container">
@@ -226,4 +242,58 @@ export default function App() {
 
         {cart.length > 0 ? (
           <div className="cart-section">
-            <h3 style={{fontFamily: "'Levi Brush', cursive", margin: "0 0 15px
+            <h3 style={{fontFamily: "'Levi Brush', cursive", margin: "0 0 15px 0", letterSpacing: "1px"}}>Your Basket</h3>
+            {cart.map((item, index) => (
+              <div key={index} className="cart-item">
+                <div className="cart-item-details">
+                  <span className="cart-item-name">{item.qty}x {item.name}</span>
+                  <button className="remove-btn" onClick={() => removeFromCart(item.name)}>Remove</button>
+                </div>
+                <span>€{(Number(item.price.replace(/[^0-9.-]+/g,"")) * item.qty).toFixed(2)}</span>
+              </div>
+            ))}
+            <div className="cart-total-row">
+              <span>Total:</span>
+              <span>€{cartTotal.toFixed(2)}</span>
+            </div>
+          </div>
+        ) : (
+          <p style={{textAlign: "center", color: "#aaa", marginBottom: "30px"}}>Your basket is empty. Add some items above!</p>
+        )}
+        
+        {/* FORM ACTION REMOVED - NOW USES OUR CUSTOM FUNCTION */}
+        <form onSubmit={handleCheckout} className="checkout-form">
+          <input type="hidden" name="Order Details" value={orderDetailsString} />
+          <input type="hidden" name="Total Price" value={`€${cartTotal.toFixed(2)}`} />
+
+          <input type="text" name="Name" placeholder="Your Name" required />
+          <input type="tel" name="Phone" placeholder="Phone Number" required />
+          
+          <select name="Collection Time" required defaultValue="">
+            <option value="" disabled>Select Collection Time (2hr Notice Required)</option>
+            {todaySlots.length > 0 && (
+              <optgroup label="Today">
+                {todaySlots.map(time => <option key={time} value={time}>{time}</option>)}
+              </optgroup>
+            )}
+            {nextDaySlots.length > 0 && (
+              <optgroup label="Next Available Day">
+                {nextDaySlots.map(time => <option key={time} value={time}>{time}</option>)}
+              </optgroup>
+            )}
+          </select>
+
+          <textarea name="Special Requests" placeholder="Any special requests or prep notes for the butcher?" />
+
+          <p className="privacy-note">
+            We will only use this number to text you when your order is ready for collection.
+          </p>
+          
+          <button type="submit" className="submit-btn" disabled={cart.length === 0}>
+            {cart.length === 0 ? "Add Items to Order" : "Place Order"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
