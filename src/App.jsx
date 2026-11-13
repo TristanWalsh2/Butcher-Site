@@ -14,12 +14,11 @@ export default function App() {
     // Menu Data Fetch
     const menuSheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTDAe_Uy88zMq7ORLXp-yAvZVPQ4sAVBB6_uFqgcPRC-YIXpM0qmUxLKAVGXWv8vLuYuRPOJOiZA84_/pub?output=csv";
 
-    // Team Data Fetch (Replace this URL with your published Team tab CSV link!)
-    const teamSheetUrl = "INSERT_YOUR_TEAM_CSV_URL_HERE";
+    // Team Data Fetch (Your specific CSV link is now hardcoded here)
+    const teamSheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTDAe_Uy88zMq7ORLXp-yAvZVPQ4sAVBB6_uFqgcPRC-YIXpM0qmUxLKAVGXWv8vLuYuRPOJOiZA84_/pub?gid=987654321&single=true&output=csv";
 
     const fetchMenu = fetch(menuSheetUrl).then(res => res.text());
     
-    // We only try to fetch the team if you've added the URL
     const fetchTeam = teamSheetUrl !== "INSERT_YOUR_TEAM_CSV_URL_HERE" 
       ? fetch(teamSheetUrl).then(res => res.text())
       : Promise.resolve("");
@@ -68,7 +67,7 @@ export default function App() {
       const uniqueCats = ["All", ...new Set(items.map(item => item.category).filter(Boolean))];
       setCategories(uniqueCats);
 
-      // Parse Team (if URL is set)
+      // Parse Team
       if (teamText) {
         const teamLines = teamText.replace(/\r/g, '').split('\n').map(line => line.split(','));
         const teamData = teamLines.slice(1).map(r => ({
@@ -227,58 +226,4 @@ export default function App() {
 
         {cart.length > 0 ? (
           <div className="cart-section">
-            <h3 style={{fontFamily: "'Levi Brush', cursive", margin: "0 0 15px 0", letterSpacing: "1px"}}>Your Basket</h3>
-            {cart.map((item, index) => (
-              <div key={index} className="cart-item">
-                <div className="cart-item-details">
-                  <span className="cart-item-name">{item.qty}x {item.name}</span>
-                  <button className="remove-btn" onClick={() => removeFromCart(item.name)}>Remove</button>
-                </div>
-                <span>€{(Number(item.price.replace(/[^0-9.-]+/g,"")) * item.qty).toFixed(2)}</span>
-              </div>
-            ))}
-            <div className="cart-total-row">
-              <span>Total:</span>
-              <span>€{cartTotal.toFixed(2)}</span>
-            </div>
-          </div>
-        ) : (
-          <p style={{textAlign: "center", color: "#aaa", marginBottom: "30px"}}>Your basket is empty. Add some items above!</p>
-        )}
-        
-        <form action="https://formspree.io/f/xyewykka" method="POST" className="checkout-form">
-          <input type="hidden" name="Order Details" value={orderDetailsString} />
-          <input type="hidden" name="Total Price" value={`€${cartTotal.toFixed(2)}`} />
-
-          <input type="text" name="Name" placeholder="Your Name" required />
-          <input type="tel" name="Phone" placeholder="Phone Number" required />
-          
-          <select name="Collection Time" required defaultValue="">
-            <option value="" disabled>Select Collection Time (2hr Notice Required)</option>
-            {todaySlots.length > 0 && (
-              <optgroup label="Today">
-                {todaySlots.map(time => <option key={time} value={time}>{time}</option>)}
-              </optgroup>
-            )}
-            {nextDaySlots.length > 0 && (
-              <optgroup label="Next Available Day">
-                {nextDaySlots.map(time => <option key={time} value={time}>{time}</option>)}
-              </optgroup>
-            )}
-          </select>
-
-          {/* NEW: Special Requests Textbox */}
-          <textarea name="Special Requests" placeholder="Any special requests or prep notes for the butcher?" />
-
-          <p className="privacy-note">
-            We will only use this number to text you when your order is ready for collection.
-          </p>
-          
-          <button type="submit" className="submit-btn" disabled={cart.length === 0}>
-            {cart.length === 0 ? "Add Items to Order" : "Place Order"}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
+            <h3 style={{fontFamily: "'Levi Brush', cursive", margin: "0 0 15px
