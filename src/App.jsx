@@ -6,73 +6,87 @@ export default function App() {
   const [activeCategory, setActiveCategory] = useState("All");
   const [categories, setCategories] = useState(["All"]);
   const [menuItems, setMenuItems] = useState([]);
+  const [teamMembers, setTeamMembers] = useState([]);
   const [loading, setLoading] = useState(true);
-  
-  // NEW: Cart Memory
   const [cart, setCart] = useState([]);
 
   useEffect(() => {
-    const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTDAe_Uy88zMq7ORLXp-yAvZVPQ4sAVBB6_uFqgcPRC-YIXpM0qmUxLKAVGXWv8vLuYuRPOJOiZA84_/pub?output=csv";
+    // Menu Data Fetch
+    const menuSheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTDAe_Uy88zMq7ORLXp-yAvZVPQ4sAVBB6_uFqgcPRC-YIXpM0qmUxLKAVGXWv8vLuYuRPOJOiZA84_/pub?output=csv";
 
-    fetch(sheetUrl)
-      .then(response => response.text())
-      .then(text => {
-        const cleanText = text.replace(/\r/g, '');
-        const rows = [];
-        let row = [];
-        let current = '';
-        let inQuotes = false;
-        
-        for (let i = 0; i < cleanText.length; i++) {
-          const char = cleanText[i];
-          if (char === '"' && cleanText[i+1] === '"') {
-            current += '"';
-            i++;
-          } else if (char === '"') {
-            inQuotes = !inQuotes;
-          } else if (char === ',' && !inQuotes) {
-            row.push(current.trim());
-            current = '';
-          } else if (char === '\n' && !inQuotes) {
-            row.push(current.trim());
-            if (row.length > 0) rows.push(row);
-            row = [];
-            current = '';
-          } else {
-            current += char;
-          }
+    // Team Data Fetch (Replace this URL with your published Team tab CSV link!)
+    const teamSheetUrl = "INSERT_YOUR_TEAM_CSV_URL_HERE";
+
+    const fetchMenu = fetch(menuSheetUrl).then(res => res.text());
+    
+    // We only try to fetch the team if you've added the URL
+    const fetchTeam = teamSheetUrl !== "INSERT_YOUR_TEAM_CSV_URL_HERE" 
+      ? fetch(teamSheetUrl).then(res => res.text())
+      : Promise.resolve("");
+
+    Promise.all([fetchMenu, fetchTeam]).then(([menuText, teamText]) => {
+      // Parse Menu
+      const cleanMenu = menuText.replace(/\r/g, '');
+      const menuRows = [];
+      let row = [];
+      let current = '';
+      let inQuotes = false;
+      
+      for (let i = 0; i < cleanMenu.length; i++) {
+        const char = cleanMenu[i];
+        if (char === '"' && cleanMenu[i+1] === '"') {
+          current += '"';
+          i++;
+        } else if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          row.push(current.trim());
+          current = '';
+        } else if (char === '\n' && !inQuotes) {
+          row.push(current.trim());
+          if (row.length > 0) menuRows.push(row);
+          row = [];
+          current = '';
+        } else {
+          current += char;
         }
-        row.push(current.trim());
-        if (row.length > 0) rows.push(row);
+      }
+      row.push(current.trim());
+      if (row.length > 0) menuRows.push(row);
 
-        const dataRows = rows.slice(1);
-        const items = dataRows.map(r => ({
-          category: r[0],
-          name: r[1],
-          description: r[2],
-          price: r[3],
-          inStock: r[4] !== 'FALSE',
-          imageUrl: r[5] || null
-        }));
+      const items = menuRows.slice(1).map(r => ({
+        category: r[0],
+        name: r[1],
+        description: r[2],
+        price: r[3],
+        inStock: r[4] !== 'FALSE',
+        imageUrl: r[5] || null,
+        allergens: r[6] || null // Added Allergens column
+      }));
 
-        setMenuItems(items);
+      setMenuItems(items);
+      const uniqueCats = ["All", ...new Set(items.map(item => item.category).filter(Boolean))];
+      setCategories(uniqueCats);
 
-        const uniqueCats = ["All"];
-        items.forEach(item => {
-          if (item.category && !uniqueCats.includes(item.category)) {
-            uniqueCats.push(item.category);
-          }
-        });
-        setCategories(uniqueCats);
-        setLoading(false);
-      });
+      // Parse Team (if URL is set)
+      if (teamText) {
+        const teamLines = teamText.replace(/\r/g, '').split('\n').map(line => line.split(','));
+        const teamData = teamLines.slice(1).map(r => ({
+          name: r[0],
+          photo: r[1] || "https://via.placeholder.com/150/2a2d32/f5f2eb?text=Photo",
+          bio: r[2]
+        })).filter(member => member.name);
+        setTeamMembers(teamData);
+      }
+
+      setLoading(false);
+    });
   }, []);
 
   const displayedItems = activeCategory === "All" 
     ? menuItems 
     : menuItems.filter(item => item.category === activeCategory);
 
-  // --- NEW: CART FUNCTIONS ---
   const addToCart = (item) => {
     const existingItem = cart.find(c => c.name === item.name);
     if (existingItem) {
@@ -91,35 +105,57 @@ export default function App() {
     return total + (isNaN(priceNum) ? 0 : priceNum) * item.qty;
   }, 0);
 
-  // Formats the cart into a readable list for Formspree
   const orderDetailsString = cart.map(item => `${item.qty}x ${item.name}`).join("\n");
 
+  // --- NEW: ADVANCED TIME CALCULATION ENGINE ---
   const getCollectionTimes = () => {
     const now = new Date();
-    const currentHour = now.getHours();
-    const openingHour = 9;
-    const closingHour = 18;
-    const leadTime = 2;
-    const earliestHour = currentHour + leadTime;
+    // 2 Hour lead time enforced to the minute
+    const earliestTime = new Date(now.getTime() + 2 * 60 * 60 * 1000); 
     
-    const todaySlots = [];
-    if (earliestHour < closingHour) {
-      for (let h = Math.max(earliestHour, openingHour); h < closingHour; h++) {
-        todaySlots.push(`Today at ${h}:00`);
-        todaySlots.push(`Today at ${h}:30`);
+    const generateSlots = (date, isToday) => {
+      const dayOfWeek = date.getDay();
+      if (dayOfWeek === 0) return []; // No Sunday Collection
+
+      let startHour = 9; 
+      if (dayOfWeek === 1) startHour = 13; // Monday starts at 1pm
+
+      const closingHour = 18;
+      const slots = [];
+
+      for (let h = startHour; h < closingHour; h++) {
+        for (let m of [0, 30]) {
+          const slotTime = new Date(date);
+          slotTime.setHours(h, m, 0, 0);
+
+          if (isToday) {
+            if (slotTime >= earliestTime) {
+              slots.push(`Today at ${h}:${m === 0 ? '00' : '30'}`);
+            }
+          } else {
+            const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const prefix = date.getDate() === new Date(now.getTime() + 86400000).getDate() ? 'Tomorrow' : dayNames[dayOfWeek];
+            slots.push(`${prefix} at ${h}:${m === 0 ? '00' : '30'}`);
+          }
+        }
       }
-    }
+      return slots;
+    };
 
-    const tomorrowSlots = [];
-    for (let h = openingHour; h < closingHour; h++) {
-      tomorrowSlots.push(`Tomorrow at ${h}:00`);
-      tomorrowSlots.push(`Tomorrow at ${h}:30`);
+    const todaySlots = generateSlots(now, true);
+    
+    // Calculate tomorrow (skip Sunday)
+    let nextDay = new Date(now);
+    nextDay.setDate(nextDay.getDate() + 1);
+    if (nextDay.getDay() === 0) {
+      nextDay.setDate(nextDay.getDate() + 1); // Bump Sunday to Monday
     }
+    const nextDaySlots = generateSlots(nextDay, false);
 
-    return { todaySlots, tomorrowSlots };
+    return { todaySlots, nextDaySlots };
   };
 
-  const { todaySlots, tomorrowSlots } = getCollectionTimes();
+  const { todaySlots, nextDaySlots } = getCollectionTimes();
 
   return (
     <div className="app-container">
@@ -147,18 +183,14 @@ export default function App() {
             {displayedItems.map((item, index) => (
               <div key={index} className={`menu-card ${!item.inStock ? 'out-of-stock' : ''}`}>
                 {!item.inStock && <div className="stock-badge">SOLD OUT</div>}
-                
-                {item.imageUrl && (
-                  <img src={item.imageUrl} alt={item.name} className="item-image" />
-                )}
-
+                {item.imageUrl && <img src={item.imageUrl} alt={item.name} className="item-image" />}
                 <div className="menu-header">
                   <h3 className="item-name">{item.name}</h3>
                   <span className="item-price">{item.price}</span>
                 </div>
                 <p className="item-description">{item.description}</p>
+                {item.allergens && <p className="item-allergens">Allergens: {item.allergens}</p>}
                 
-                {/* NEW: Add to Cart Button */}
                 {item.inStock && (
                   <button className="add-btn" onClick={() => addToCart(item)}>
                     + Add to Order
@@ -172,10 +204,27 @@ export default function App() {
 
       <hr className="divider" />
 
+      {teamMembers.length > 0 && (
+        <>
+          <div className="team-section">
+            <h2>Meat The Team</h2>
+            <div className="team-grid">
+              {teamMembers.map((member, index) => (
+                <div key={index} className="team-member">
+                  <img src={member.photo} alt={member.name} className="team-photo" />
+                  <h3 className="team-name">{member.name}</h3>
+                  <p className="team-bio">{member.bio}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <hr className="divider" />
+        </>
+      )}
+
       <div className="checkout-section">
         <h2>Complete Your Order</h2>
 
-        {/* NEW: Cart Summary View */}
         {cart.length > 0 ? (
           <div className="cart-section">
             <h3 style={{fontFamily: "'Levi Brush', cursive", margin: "0 0 15px 0", letterSpacing: "1px"}}>Your Basket</h3>
@@ -198,7 +247,6 @@ export default function App() {
         )}
         
         <form action="https://formspree.io/f/xyewykka" method="POST" className="checkout-form">
-          {/* THESE HIDDEN INPUTS SEND THE CART TO YOU */}
           <input type="hidden" name="Order Details" value={orderDetailsString} />
           <input type="hidden" name="Total Price" value={`€${cartTotal.toFixed(2)}`} />
 
@@ -212,16 +260,20 @@ export default function App() {
                 {todaySlots.map(time => <option key={time} value={time}>{time}</option>)}
               </optgroup>
             )}
-            <optgroup label="Tomorrow">
-              {tomorrowSlots.map(time => <option key={time} value={time}>{time}</option>)}
-            </optgroup>
+            {nextDaySlots.length > 0 && (
+              <optgroup label="Next Available Day">
+                {nextDaySlots.map(time => <option key={time} value={time}>{time}</option>)}
+              </optgroup>
+            )}
           </select>
+
+          {/* NEW: Special Requests Textbox */}
+          <textarea name="Special Requests" placeholder="Any special requests or prep notes for the butcher?" />
 
           <p className="privacy-note">
             We will only use this number to text you when your order is ready for collection.
           </p>
           
-          {/* Disables the button if the cart is empty */}
           <button type="submit" className="submit-btn" disabled={cart.length === 0}>
             {cart.length === 0 ? "Add Items to Order" : "Place Order"}
           </button>
