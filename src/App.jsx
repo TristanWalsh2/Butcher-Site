@@ -18,10 +18,7 @@ export default function App() {
     const teamSheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTDAe_Uy88zMq7ORLXp-yAvZVPQ4sAVBB6_uFqgcPRC-YIXpM0qmUxLKAVGXWv8vLuYuRPOJOiZA84_/pub?gid=987654321&single=true&output=csv";
 
     const fetchMenu = fetch(menuSheetUrl).then(res => res.text());
-    
-    const fetchTeam = teamSheetUrl !== "INSERT_YOUR_TEAM_CSV_URL_HERE" 
-      ? fetch(teamSheetUrl).then(res => res.text())
-      : Promise.resolve("");
+    const fetchTeam = fetch(teamSheetUrl).then(res => res.text());
 
     Promise.all([fetchMenu, fetchTeam]).then(([menuText, teamText]) => {
       // Parse Menu
@@ -67,13 +64,40 @@ export default function App() {
       const uniqueCats = ["All", ...new Set(items.map(item => item.category).filter(Boolean))];
       setCategories(uniqueCats);
 
-      // Parse Team
+      // Parse Team (NEW: Smart parser that ignores commas inside bios)
       if (teamText) {
-        const teamLines = teamText.replace(/\r/g, '').split('\n').map(line => line.split(','));
-        const teamData = teamLines.slice(1).map(r => ({
+        const cleanTeam = teamText.replace(/\r/g, '');
+        const teamRows = [];
+        let tRow = [];
+        let tCurrent = '';
+        let tInQuotes = false;
+        
+        for (let i = 0; i < cleanTeam.length; i++) {
+          const char = cleanTeam[i];
+          if (char === '"' && cleanTeam[i+1] === '"') {
+            tCurrent += '"';
+            i++;
+          } else if (char === '"') {
+            tInQuotes = !tInQuotes;
+          } else if (char === ',' && !tInQuotes) {
+            tRow.push(tCurrent.trim());
+            tCurrent = '';
+          } else if (char === '\n' && !tInQuotes) {
+            tRow.push(tCurrent.trim());
+            if (tRow.length > 0) teamRows.push(tRow);
+            tRow = [];
+            tCurrent = '';
+          } else {
+            tCurrent += char;
+          }
+        }
+        tRow.push(tCurrent.trim());
+        if (tRow.length > 0) teamRows.push(tRow);
+
+        const teamData = teamRows.slice(1).map(r => ({
           name: r[0],
           photo: r[1] || "https://via.placeholder.com/150/2a2d32/f5f2eb?text=Photo",
-          bio: r[2]
+          bio: r[2] // This will now grab the full sentence properly!
         })).filter(member => member.name);
         setTeamMembers(teamData);
       }
