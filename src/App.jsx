@@ -64,7 +64,7 @@ export default function App() {
       const uniqueCats = ["All", ...new Set(items.map(item => item.category).filter(Boolean))];
       setCategories(uniqueCats);
 
-      // Parse Team (Smart parser that ignores commas inside bios)
+      // Parse Team
       if (teamText) {
         const cleanTeam = teamText.replace(/\r/g, '');
         const teamRows = [];
