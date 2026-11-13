@@ -188,10 +188,10 @@ body {
   width: 100%;
   box-sizing: border-box;
   display: flex; 
-  align-items: center; 
+  flex-direction: row; 
+  align-items: flex-start; /* Keeps photo at the top if the bio is really long */
   gap: 20px; 
   text-align: left; 
-  min-height: auto; /* Ensures the box stretches vertically to fit content */
 }
 
 .team-photo {
