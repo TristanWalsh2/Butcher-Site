@@ -14,7 +14,7 @@ export default function App() {
     // Menu Data Fetch
     const menuSheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTDAe_Uy88zMq7ORLXp-yAvZVPQ4sAVBB6_uFqgcPRC-YIXpM0qmUxLKAVGXWv8vLuYuRPOJOiZA84_/pub?output=csv";
 
-    // Team Data Fetch (Your specific CSV link)
+    // Team Data Fetch
     const teamSheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTDAe_Uy88zMq7ORLXp-yAvZVPQ4sAVBB6_uFqgcPRC-YIXpM0qmUxLKAVGXWv8vLuYuRPOJOiZA84_/pub?gid=987654321&single=true&output=csv";
 
     const fetchMenu = fetch(menuSheetUrl).then(res => res.text());
@@ -153,20 +153,19 @@ export default function App() {
 
   const { todaySlots, nextDaySlots } = getCollectionTimes();
 
-  // --- NEW: GOOGLE APPS SCRIPT CHECKOUT ENGINE ---
+  // --- GOOGLE APPS SCRIPT CHECKOUT ENGINE ---
   const handleCheckout = (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
 
-    // This calls your new unlimited Google Script
     fetch("https://script.google.com/macros/s/AKfycbwp98KOFUAeg8S6GgitUo8yY9dRIRWzUEMF7PkXWiLWtrt5OqhEOWFhDhwPo-rr1EhT4Q/exec", {
       method: "POST",
       mode: "no-cors",
       body: formData,
     }).then(() => {
       alert("Order placed successfully! We will text you when it's ready.");
-      setCart([]); // Instantly empty the basket
-      e.target.reset(); // Reset the form fields
+      setCart([]); 
+      e.target.reset(); 
     }).catch(err => {
       alert("There was an issue placing your order. Please call the shop.");
     });
@@ -227,8 +226,10 @@ export default function App() {
               {teamMembers.map((member, index) => (
                 <div key={index} className="team-member">
                   <img src={member.photo} alt={member.name} className="team-photo" />
-                  <h3 className="team-name">{member.name}</h3>
-                  <p className="team-bio">{member.bio}</p>
+                  <div className="team-info">
+                    <h3 className="team-name">{member.name}</h3>
+                    <p className="team-bio">{member.bio}</p>
+                  </div>
                 </div>
               ))}
             </div>
@@ -261,7 +262,6 @@ export default function App() {
           <p style={{textAlign: "center", color: "#aaa", marginBottom: "30px"}}>Your basket is empty. Add some items above!</p>
         )}
         
-        {/* FORM ACTION REMOVED - NOW USES OUR CUSTOM FUNCTION */}
         <form onSubmit={handleCheckout} className="checkout-form">
           <input type="hidden" name="Order Details" value={orderDetailsString} />
           <input type="hidden" name="Total Price" value={`€${cartTotal.toFixed(2)}`} />
