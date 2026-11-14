@@ -9,19 +9,21 @@ export default function App() {
   const [teamMembers, setTeamMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [cart, setCart] = useState([]);
+  const [isPaused, setIsPaused] = useState(false); 
 
   useEffect(() => {
-    // Menu Data Fetch
     const menuSheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTDAe_Uy88zMq7ORLXp-yAvZVPQ4sAVBB6_uFqgcPRC-YIXpM0qmUxLKAVGXWv8vLuYuRPOJOiZA84_/pub?output=csv";
-
-    // Team Data Fetch
     const teamSheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTDAe_Uy88zMq7ORLXp-yAvZVPQ4sAVBB6_uFqgcPRC-YIXpM0qmUxLKAVGXWv8vLuYuRPOJOiZA84_/pub?gid=987654321&single=true&output=csv";
+    
+    // Your exact Settings CSV link successfully injected below:
+    const settingsSheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTDAe_Uy88zMq7ORLXp-yAvZVPQ4sAVBB6_uFqgcPRC-YIXpM0qmUxLKAVGXWv8vLuYuRPOJOiZA84_/pub?gid=1098006197&single=true&output=csv";
 
     const fetchMenu = fetch(menuSheetUrl).then(res => res.text());
     const fetchTeam = fetch(teamSheetUrl).then(res => res.text());
+    const fetchSettings = fetch(settingsSheetUrl).then(res => res.text()).catch(() => ""); 
 
-    Promise.all([fetchMenu, fetchTeam]).then(([menuText, teamText]) => {
-      // Parse Menu
+    Promise.all([fetchMenu, fetchTeam, fetchSettings]).then(([menuText, teamText, settingsText]) => {
+      
       const cleanMenu = menuText.replace(/\r/g, '');
       const menuRows = [];
       let row = [];
@@ -64,7 +66,6 @@ export default function App() {
       const uniqueCats = ["All", ...new Set(items.map(item => item.category).filter(Boolean))];
       setCategories(uniqueCats);
 
-      // Parse Team
       if (teamText) {
         const cleanTeam = teamText.replace(/\r/g, '');
         const teamRows = [];
@@ -100,6 +101,14 @@ export default function App() {
           bio: r[2]
         })).filter(member => member.name);
         setTeamMembers(teamData);
+      }
+
+      // The Emergency Stop Reader
+      if (settingsText) {
+        const isPausedRow = settingsText.split('\n').find(r => r.includes("PAUSE ONLINE ORDERS"));
+        if (isPausedRow && (isPausedRow.includes("TRUE") || isPausedRow.includes("true"))) {
+          setIsPaused(true);
+        }
       }
 
       setLoading(false);
@@ -177,7 +186,6 @@ export default function App() {
 
   const { todaySlots, nextDaySlots } = getCollectionTimes();
 
-  // --- GOOGLE APPS SCRIPT CHECKOUT ENGINE ---
   const handleCheckout = (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
@@ -286,37 +294,51 @@ export default function App() {
           <p style={{textAlign: "center", color: "#aaa", marginBottom: "30px"}}>Your basket is empty. Add some items above!</p>
         )}
         
-        <form onSubmit={handleCheckout} className="checkout-form">
-          <input type="hidden" name="Order Details" value={orderDetailsString} />
-          <input type="hidden" name="Total Price" value={`€${cartTotal.toFixed(2)}`} />
+        {isPaused ? (
+          <div style={{ textAlign: 'center', padding: '25px', backgroundColor: '#fff3f3', border: '2px solid #ffcdd2', borderRadius: '8px', color: '#d32f2f' }}>
+            <h3 style={{ margin: '0 0 10px 0', fontFamily: "'Levi Brush', cursive", fontSize: "1.5rem" }}>The Shop is Jammed!</h3>
+            <p style={{ margin: '0', fontWeight: '500' }}>We have temporarily paused online orders so the butchers can catch up with the queue. Please check back in a little while or call the shop directly.</p>
+          </div>
+        ) : (
+          <form onSubmit={handleCheckout} className="checkout-form">
+            <input type="hidden" name="Order Details" value={orderDetailsString} />
+            <input type="hidden" name="Total Price" value={`€${cartTotal.toFixed(2)}`} />
 
-          <input type="text" name="Name" placeholder="Your Name" required />
-          <input type="tel" name="Phone" placeholder="Phone Number" required />
-          
-          <select name="Collection Time" required defaultValue="">
-            <option value="" disabled>Select Collection Time (2hr Notice Required)</option>
-            {todaySlots.length > 0 && (
-              <optgroup label="Today">
-                {todaySlots.map(time => <option key={time} value={time}>{time}</option>)}
-              </optgroup>
-            )}
-            {nextDaySlots.length > 0 && (
-              <optgroup label="Next Available Day">
-                {nextDaySlots.map(time => <option key={time} value={time}>{time}</option>)}
-              </optgroup>
-            )}
-          </select>
+            <input type="text" name="Name" placeholder="Your Name" required />
+            <input type="tel" name="Phone" placeholder="Phone Number" required />
+            
+            <select name="Collection Time" required defaultValue="">
+              <option value="" disabled>Select Collection Time (2hr Notice Required)</option>
+              {todaySlots.length > 0 && (
+                <optgroup label="Today">
+                  {todaySlots.map(time => <option key={time} value={time}>{time}</option>)}
+                </optgroup>
+              )}
+              {nextDaySlots.length > 0 && (
+                <optgroup label="Next Available Day">
+                  {nextDaySlots.map(time => <option key={time} value={time}>{time}</option>)}
+                </optgroup>
+              )}
+            </select>
 
-          <textarea name="Special Requests" placeholder="Any special requests or prep notes for the butcher?" />
+            <textarea name="Special Requests" placeholder="Any special requests or prep notes for the butcher?" />
 
-          <p className="privacy-note">
-            We will only use this number to text you when your order is ready for collection.
-          </p>
-          
-          <button type="submit" className="submit-btn" disabled={cart.length === 0}>
-            {cart.length === 0 ? "Add Items to Order" : "Place Order"}
-          </button>
-        </form>
+            <p className="privacy-note" style={{marginBottom: "10px"}}>
+              We will only use this number to text you when your order is ready for collection.
+            </p>
+
+            <label style={{ display: "flex", gap: "10px", alignItems: "flex-start", fontSize: "0.9rem", textAlign: "left", marginBottom: "20px", cursor: "pointer" }}>
+              <input type="checkbox" name="Marketing Consent" value="Yes" style={{ marginTop: "4px" }} />
+              <span>Tick this box if you don't mind receiving a message every now and again about good deals or promotions. I promise I won't wreck your head.</span>
+            </label>
+
+            <input type="text" name="bot_trap" style={{ display: 'none' }} tabIndex="-1" autoComplete="off" />
+            
+            <button type="submit" className="submit-btn" disabled={cart.length === 0}>
+              {cart.length === 0 ? "Add Items to Order" : "Place Order"}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );
