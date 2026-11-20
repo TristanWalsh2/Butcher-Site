@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import './App.css';
 import masterLogo from './1000081135.png';
+
+// Load Stripe using the Publishable Key saved in Vercel Environment Variables
+const stripePromise = process.env.REACT_APP_STRIPE_PUBLIC_KEY
+  ? loadStripe(process.env.REACT_APP_STRIPE_PUBLIC_KEY)
+  : null;
 
 // Smart CSV parser so commas inside descriptions or bios don't get cut off
 function parseCSV(text) {
@@ -34,12 +41,231 @@ function parseCSV(text) {
   return rows;
 }
 
+// Dark-mode styling for the Stripe Card Input Box
+const CARD_ELEMENT_OPTIONS = {
+  hidePostalCode: true,
+  style: {
+    base: {
+      color: '#f5f2eb',
+      fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+      fontSize: '16px',
+      '::placeholder': {
+        color: '#888888',
+      },
+    },
+    invalid: {
+      color: '#ff6b6b',
+      iconColor: '#ff6b6b',
+    },
+  },
+};
+
+// Dedicated Checkout Form used ONLY when 'Enable Stripe Test Payments' is ticked in Google Sheets
+function StripeCheckoutForm({
+  cart,
+  cartTotal,
+  customerName,
+  setCustomerName,
+  customerPhone,
+  setCustomerPhone,
+  collectionTime,
+  setCollectionTime,
+  specialRequests,
+  setSpecialRequests,
+  marketingConsent,
+  setMarketingConsent,
+  botTrap,
+  setBotTrap,
+  todaySlots,
+  tomorrowSlots,
+  submitOrderToSheet,
+}) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [cardError, setCardError] = useState('');
+
+  const handleStripeSubmit = async (e) => {
+    e.preventDefault();
+    if (cart.length === 0 || isProcessing || !stripe || !elements) return;
+
+    setIsProcessing(true);
+    setCardError('');
+
+    try {
+      // 1. Ask your Vercel "Bouncer" script to create a manual Auth hold
+      const response = await fetch('/api/create-payment-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: cartTotal,
+          customerName,
+          customerPhone,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.clientSecret) {
+        throw new Error(data.error || 'Could not start card authorization.');
+      }
+
+      // 2. Confirm the card details directly with Stripe (places hold, takes €0.00)
+      const result = await stripe.confirmCardPayment(data.clientSecret, {
+        payment_method: {
+          card: elements.getElement(CardElement),
+          billing_details: {
+            name: customerName,
+            phone: customerPhone,
+          },
+        },
+      });
+
+      if (result.error) {
+        setCardError(result.error.message);
+        setIsProcessing(false);
+        return;
+      }
+
+      // 3. Hold succeeded — send the order to your Google Sheet & Discord KDS
+      if (result.paymentIntent && result.paymentIntent.status === 'requires_capture') {
+        await submitOrderToSheet(true);
+        const cardElement = elements.getElement(CardElement);
+        if (cardElement) cardElement.clear();
+      } else {
+        setCardError('Card authorization did not complete. Please try again.');
+      }
+    } catch (err) {
+      setCardError(err.message || 'Something went wrong authorizing your card.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleStripeSubmit} className="checkout-form">
+      <input
+        type="text"
+        name="Name"
+        placeholder="Your Name"
+        value={customerName}
+        onChange={(e) => setCustomerName(e.target.value)}
+        required
+      />
+      <input
+        type="tel"
+        name="Phone"
+        placeholder="Phone Number"
+        value={customerPhone}
+        onChange={(e) => setCustomerPhone(e.target.value)}
+        required
+      />
+
+      <select
+        name="Collection Time"
+        value={collectionTime}
+        onChange={(e) => setCollectionTime(e.target.value)}
+        required
+      >
+        <option value="" disabled>Select Collection Time (2hr Notice Required)</option>
+        {todaySlots.length > 0 && (
+          <optgroup label="Today">
+            {todaySlots.map(time => <option key={time} value={time}>{time}</option>)}
+          </optgroup>
+        )}
+        <optgroup label="Tomorrow">
+          {tomorrowSlots.map(time => <option key={time} value={time}>{time}</option>)}
+        </optgroup>
+      </select>
+
+      <textarea
+        name="Special Requests"
+        placeholder="Special requests (e.g., thick cut, trimmed, extra garlic butter...)"
+        value={specialRequests}
+        onChange={(e) => setSpecialRequests(e.target.value)}
+      />
+
+      {/* Stripe Auth & Capture Card Box */}
+      <div style={{
+        backgroundColor: '#2a2d32',
+        border: '1px solid #444',
+        borderRadius: '8px',
+        padding: '15px',
+      }}>
+        <p style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: '#f5f2eb', lineHeight: '1.4' }}>
+          <strong>Card Hold Only — €0.00 Taken Today</strong><br />
+          <span style={{ color: '#bbb' }}>
+            Your card is authorized to secure your order. Please pay at the counter upon collection.
+          </span>
+        </p>
+        <div style={{
+          backgroundColor: '#1c1e21',
+          border: '1px solid #444',
+          borderRadius: '5px',
+          padding: '12px',
+        }}>
+          <CardElement options={CARD_ELEMENT_OPTIONS} />
+        </div>
+        {cardError && (
+          <p style={{ color: '#ff6b6b', fontSize: '0.85rem', margin: '10px 0 0 0' }}>
+            {cardError}
+          </p>
+        )}
+      </div>
+
+      {/* Personal GDPR Marketing Opt-In */}
+      <label style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: '10px',
+        fontSize: '0.85rem',
+        color: '#ccc',
+        cursor: 'pointer',
+        lineHeight: '1.4'
+      }}>
+        <input
+          type="checkbox"
+          checked={marketingConsent}
+          onChange={(e) => setMarketingConsent(e.target.checked)}
+          style={{ marginTop: '3px', width: '18px', height: '18px', accentColor: '#c92a2a' }}
+        />
+        <span>
+          Tick this box if you don't mind receiving a message every now and again about good deals or promotions. I promise I won't wreck your head.
+        </span>
+      </label>
+
+      {/* Hidden Honeypot Bot Trap */}
+      <input
+        type="text"
+        name="bot_trap"
+        value={botTrap}
+        onChange={(e) => setBotTrap(e.target.value)}
+        style={{ display: 'none' }}
+        tabIndex="-1"
+        autoComplete="off"
+      />
+
+      <p className="privacy-note">
+        We will only use this number to text you when your order is ready for collection.
+      </p>
+
+      <button type="submit" className="submit-btn" disabled={cart.length === 0 || isProcessing || !stripe}>
+        {isProcessing
+          ? "Authorizing Card..."
+          : cart.length === 0
+            ? "Add Items to Order"
+            : `Authorize Card (€${cartTotal.toFixed(2)} Hold)`}
+      </button>
+    </form>
+  );
+}
+
 export default function App() {
   const [activeCategory, setActiveCategory] = useState("All");
   const [categories, setCategories] = useState(["All"]);
   const [menuItems, setMenuItems] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
   const [isOrdersPaused, setIsOrdersPaused] = useState(false);
+  const [isStripeTestEnabled, setIsStripeTestEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Cart & Checkout State
@@ -105,16 +331,24 @@ export default function App() {
       })
       .catch(() => {});
 
-    // 3. Fetch Live Settings (Emergency Pause Toggle)
+    // 3. Fetch Live Settings (Emergency Pause + Stripe Test Mode Feature Flags)
     fetch(settingsSheetUrl)
       .then(res => res.text())
       .then(text => {
         const rows = parseCSV(text).slice(1);
+
         const pauseRow = rows.find(
           r => r[0] && r[0].toUpperCase().includes("PAUSE ONLINE ORDERS")
         );
         if (pauseRow && pauseRow[1] && pauseRow[1].toUpperCase() === "TRUE") {
           setIsOrdersPaused(true);
+        }
+
+        const stripeRow = rows.find(
+          r => r[0] && r[0].toUpperCase().includes("ENABLE STRIPE TEST PAYMENTS")
+        );
+        if (stripeRow && stripeRow[1] && stripeRow[1].toUpperCase() === "TRUE") {
+          setIsStripeTestEnabled(true);
         }
       })
       .catch(() => {});
@@ -173,36 +407,50 @@ export default function App() {
 
   const { todaySlots, tomorrowSlots } = getCollectionTimes();
 
-  // Order Submission to Google Apps Script
-  const handleOrderSubmit = async (e) => {
-    e.preventDefault();
-    if (cart.length === 0 || isSubmitting) return;
+  // Shared helper to send the order to Google Apps Script & Discord KDS
+  const submitOrderToSheet = async (wasCardAuthorized = false) => {
+    const finalSpecialRequests = wasCardAuthorized
+      ? `[PAYMENT: CARD AUTHORIZED - PAY IN STORE] ${specialRequests || ""}`.trim()
+      : (specialRequests || "None");
 
-    setIsSubmitting(true);
     const formData = new FormData();
     formData.append("Name", customerName);
     formData.append("Phone", customerPhone);
     formData.append("Collection Time", collectionTime);
-    formData.append("Special Requests", specialRequests || "None");
+    formData.append("Special Requests", finalSpecialRequests);
     formData.append("Order Details", orderDetailsString);
     formData.append("Total Price", `€${cartTotal.toFixed(2)}`);
     formData.append("Marketing Consent", marketingConsent ? "Yes" : "No");
     formData.append("bot_trap", botTrap);
 
-    try {
-      await fetch(appsScriptUrl, {
-        method: "POST",
-        mode: "no-cors",
-        body: formData
-      });
+    await fetch(appsScriptUrl, {
+      method: "POST",
+      mode: "no-cors",
+      body: formData
+    });
 
+    if (wasCardAuthorized) {
+      alert("Order Secured! Your card is authorized (€0.00 charged today). Please pay at the counter upon collection.");
+    } else {
       alert("Order placed! We'll text you as soon as it's ready for collection.");
-      setCart([]);
-      setCustomerName("");
-      setCustomerPhone("");
-      setCollectionTime("");
-      setSpecialRequests("");
-      setMarketingConsent(false);
+    }
+
+    setCart([]);
+    setCustomerName("");
+    setCustomerPhone("");
+    setCollectionTime("");
+    setSpecialRequests("");
+    setMarketingConsent(false);
+  };
+
+  // Standard Order Submission (when Stripe Test Payments toggle is OFF)
+  const handleStandardSubmit = async (e) => {
+    e.preventDefault();
+    if (cart.length === 0 || isSubmitting) return;
+
+    setIsSubmitting(true);
+    try {
+      await submitOrderToSheet(false);
     } catch (err) {
       alert("Something went wrong sending your order. Please try again.");
     } finally {
@@ -336,88 +584,112 @@ export default function App() {
               </p>
             )}
 
-            <form onSubmit={handleOrderSubmit} className="checkout-form">
-              <input
-                type="text"
-                name="Name"
-                placeholder="Your Name"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                required
-              />
-              <input
-                type="tel"
-                name="Phone"
-                placeholder="Phone Number"
-                value={customerPhone}
-                onChange={(e) => setCustomerPhone(e.target.value)}
-                required
-              />
-
-              <select
-                name="Collection Time"
-                value={collectionTime}
-                onChange={(e) => setCollectionTime(e.target.value)}
-                required
-              >
-                <option value="" disabled>Select Collection Time (2hr Notice Required)</option>
-                {todaySlots.length > 0 && (
-                  <optgroup label="Today">
-                    {todaySlots.map(time => <option key={time} value={time}>{time}</option>)}
-                  </optgroup>
-                )}
-                <optgroup label="Tomorrow">
-                  {tomorrowSlots.map(time => <option key={time} value={time}>{time}</option>)}
-                </optgroup>
-              </select>
-
-              <textarea
-                name="Special Requests"
-                placeholder="Special requests (e.g., thick cut, trimmed, extra garlic butter...)"
-                value={specialRequests}
-                onChange={(e) => setSpecialRequests(e.target.value)}
-              />
-
-              {/* Personal GDPR Marketing Opt-In */}
-              <label style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: '10px',
-                fontSize: '0.85rem',
-                color: '#ccc',
-                cursor: 'pointer',
-                lineHeight: '1.4'
-              }}>
-                <input
-                  type="checkbox"
-                  checked={marketingConsent}
-                  onChange={(e) => setMarketingConsent(e.target.checked)}
-                  style={{ marginTop: '3px', width: '18px', height: '18px', accentColor: '#c92a2a' }}
+            {isStripeTestEnabled && stripePromise ? (
+              <Elements stripe={stripePromise}>
+                <StripeCheckoutForm
+                  cart={cart}
+                  cartTotal={cartTotal}
+                  customerName={customerName}
+                  setCustomerName={setCustomerName}
+                  customerPhone={customerPhone}
+                  setCustomerPhone={setCustomerPhone}
+                  collectionTime={collectionTime}
+                  setCollectionTime={setCollectionTime}
+                  specialRequests={specialRequests}
+                  setSpecialRequests={setSpecialRequests}
+                  marketingConsent={marketingConsent}
+                  setMarketingConsent={setMarketingConsent}
+                  botTrap={botTrap}
+                  setBotTrap={setBotTrap}
+                  todaySlots={todaySlots}
+                  tomorrowSlots={tomorrowSlots}
+                  submitOrderToSheet={submitOrderToSheet}
                 />
-                <span>
-                  Tick this box if you don't mind receiving a message every now and again about good deals or promotions. I promise I won't wreck your head.
-                </span>
-              </label>
+              </Elements>
+            ) : (
+              <form onSubmit={handleStandardSubmit} className="checkout-form">
+                <input
+                  type="text"
+                  name="Name"
+                  placeholder="Your Name"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  required
+                />
+                <input
+                  type="tel"
+                  name="Phone"
+                  placeholder="Phone Number"
+                  value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  required
+                />
 
-              {/* Hidden Honeypot Bot Trap */}
-              <input
-                type="text"
-                name="bot_trap"
-                value={botTrap}
-                onChange={(e) => setBotTrap(e.target.value)}
-                style={{ display: 'none' }}
-                tabIndex="-1"
-                autoComplete="off"
-              />
+                <select
+                  name="Collection Time"
+                  value={collectionTime}
+                  onChange={(e) => setCollectionTime(e.target.value)}
+                  required
+                >
+                  <option value="" disabled>Select Collection Time (2hr Notice Required)</option>
+                  {todaySlots.length > 0 && (
+                    <optgroup label="Today">
+                      {todaySlots.map(time => <option key={time} value={time}>{time}</option>)}
+                    </optgroup>
+                  )}
+                  <optgroup label="Tomorrow">
+                    {tomorrowSlots.map(time => <option key={time} value={time}>{time}</option>)}
+                  </optgroup>
+                </select>
 
-              <p className="privacy-note">
-                We will only use this number to text you when your order is ready for collection.
-              </p>
+                <textarea
+                  name="Special Requests"
+                  placeholder="Special requests (e.g., thick cut, trimmed, extra garlic butter...)"
+                  value={specialRequests}
+                  onChange={(e) => setSpecialRequests(e.target.value)}
+                />
 
-              <button type="submit" className="submit-btn" disabled={cart.length === 0 || isSubmitting}>
-                {isSubmitting ? "Sending Order..." : cart.length === 0 ? "Add Items to Order" : "Place Order"}
-              </button>
-            </form>
+                {/* Personal GDPR Marketing Opt-In */}
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '10px',
+                  fontSize: '0.85rem',
+                  color: '#ccc',
+                  cursor: 'pointer',
+                  lineHeight: '1.4'
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={marketingConsent}
+                    onChange={(e) => setMarketingConsent(e.target.checked)}
+                    style={{ marginTop: '3px', width: '18px', height: '18px', accentColor: '#c92a2a' }}
+                  />
+                  <span>
+                    Tick this box if you don't mind receiving a message every now and again about good deals or promotions. I promise I won't wreck your head.
+                  </span>
+                </label>
+
+                {/* Hidden Honeypot Bot Trap */}
+                <input
+                  type="text"
+                  name="bot_trap"
+                  value={botTrap}
+                  onChange={(e) => setBotTrap(e.target.value)}
+                  style={{ display: 'none' }}
+                  tabIndex="-1"
+                  autoComplete="off"
+                />
+
+                <p className="privacy-note">
+                  We will only use this number to text you when your order is ready for collection.
+                </p>
+
+                <button type="submit" className="submit-btn" disabled={cart.length === 0 || isSubmitting}>
+                  {isSubmitting ? "Sending Order..." : cart.length === 0 ? "Add Items to Order" : "Place Order"}
+                </button>
+              </form>
+            )}
           </>
         )}
       </div>
