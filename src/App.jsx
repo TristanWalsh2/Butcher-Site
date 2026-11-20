@@ -41,6 +41,25 @@ function parseCSV(text) {
   return rows;
 }
 
+// Converts standard YouTube, youtu.be, or Shorts links into a clean embed URL
+function getYouTubeEmbedUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/
+  ];
+
+  for (const pattern of patterns) {
+    const match = trimmed.match(pattern);
+    if (match && match[1]) {
+      return `https://www.youtube.com/embed/${match[1]}?rel=0`;
+    }
+  }
+  return null;
+}
+
 // Dark-mode styling for the Stripe Card Input Box
 const CARD_ELEMENT_OPTIONS = {
   hidePostalCode: true,
@@ -68,6 +87,8 @@ function StripeCheckoutForm({
   setCustomerName,
   customerPhone,
   setCustomerPhone,
+  customerEmail,
+  setCustomerEmail,
   collectionTime,
   setCollectionTime,
   specialRequests,
@@ -116,6 +137,7 @@ function StripeCheckoutForm({
           billing_details: {
             name: customerName,
             phone: customerPhone,
+            email: customerEmail,
           },
         },
       });
@@ -157,6 +179,14 @@ function StripeCheckoutForm({
         placeholder="Phone Number"
         value={customerPhone}
         onChange={(e) => setCustomerPhone(e.target.value)}
+        required
+      />
+      <input
+        type="email"
+        name="Email"
+        placeholder="Email Address (for 'Order Ready' alert)"
+        value={customerEmail}
+        onChange={(e) => setCustomerEmail(e.target.value)}
         required
       />
 
@@ -245,7 +275,7 @@ function StripeCheckoutForm({
       />
 
       <p className="privacy-note">
-        We will only use this number to text you when your order is ready for collection.
+        We will only use your details to let you know when your order is ready for collection.
       </p>
 
       <button type="submit" className="submit-btn" disabled={cart.length === 0 || isProcessing || !stripe}>
@@ -266,12 +296,15 @@ export default function App() {
   const [teamMembers, setTeamMembers] = useState([]);
   const [isOrdersPaused, setIsOrdersPaused] = useState(false);
   const [isStripeTestEnabled, setIsStripeTestEnabled] = useState(false);
+  const [showVideoOfTheWeek, setShowVideoOfTheWeek] = useState(false);
+  const [videoEmbedUrl, setVideoEmbedUrl] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Cart & Checkout State
   const [cart, setCart] = useState([]);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
   const [collectionTime, setCollectionTime] = useState("");
   const [specialRequests, setSpecialRequests] = useState("");
   const [marketingConsent, setMarketingConsent] = useState(false);
@@ -331,7 +364,7 @@ export default function App() {
       })
       .catch(() => {});
 
-    // 3. Fetch Live Settings (Emergency Pause + Stripe Test Mode Feature Flags)
+    // 3. Fetch Live Settings (Emergency Pause, Stripe Demo, Video of the Week)
     fetch(settingsSheetUrl)
       .then(res => res.text())
       .then(text => {
@@ -349,6 +382,20 @@ export default function App() {
         );
         if (stripeRow && stripeRow[1] && stripeRow[1].toUpperCase() === "TRUE") {
           setIsStripeTestEnabled(true);
+        }
+
+        const videoToggleRow = rows.find(
+          r => r[0] && r[0].toUpperCase().includes("SHOW VIDEO OF THE WEEK")
+        );
+        if (videoToggleRow && videoToggleRow[1] && videoToggleRow[1].toUpperCase() === "TRUE") {
+          setShowVideoOfTheWeek(true);
+        }
+
+        const videoLinkRow = rows.find(
+          r => r[0] && r[0].toUpperCase().includes("VIDEO OF THE WEEK LINK")
+        );
+        if (videoLinkRow && videoLinkRow[1]) {
+          setVideoEmbedUrl(getYouTubeEmbedUrl(videoLinkRow[1]));
         }
       })
       .catch(() => {});
@@ -416,6 +463,7 @@ export default function App() {
     const formData = new FormData();
     formData.append("Name", customerName);
     formData.append("Phone", customerPhone);
+    formData.append("Email", customerEmail);
     formData.append("Collection Time", collectionTime);
     formData.append("Special Requests", finalSpecialRequests);
     formData.append("Order Details", orderDetailsString);
@@ -430,14 +478,15 @@ export default function App() {
     });
 
     if (wasCardAuthorized) {
-      alert("Order Secured! Your card is authorized (€0.00 charged today). Please pay at the counter upon collection.");
+      alert("Order Secured! Your card is authorized (€0.00 charged today). We'll email you as soon as it's ready for collection.");
     } else {
-      alert("Order placed! We'll text you as soon as it's ready for collection.");
+      alert("Order placed! We'll email you as soon as it's ready for collection.");
     }
 
     setCart([]);
     setCustomerName("");
     setCustomerPhone("");
+    setCustomerEmail("");
     setCollectionTime("");
     setSpecialRequests("");
     setMarketingConsent(false);
@@ -463,6 +512,51 @@ export default function App() {
       <div className="header-container">
         <img src={masterLogo} alt="Garvey's Craft Butcher - Tristan Walsh" className="main-logo" />
       </div>
+
+      {/* VIDEO OF THE WEEK CINEMATIC BANNER (Controlled by Settings tab) */}
+      {showVideoOfTheWeek && videoEmbedUrl && (
+        <div style={{
+          marginBottom: '30px',
+          backgroundColor: '#2a2d32',
+          border: '1px solid #333',
+          borderRadius: '10px',
+          padding: '15px',
+          textAlign: 'center'
+        }}>
+          <h2 style={{
+            fontFamily: "'Levi Brush', cursive",
+            letterSpacing: '2px',
+            margin: '0 0 12px 0',
+            fontSize: '1.5rem',
+            color: '#f5f2eb'
+          }}>
+            From the Block: Video of the Week
+          </h2>
+          <div style={{
+            position: 'relative',
+            paddingBottom: '56.25%',
+            height: 0,
+            overflow: 'hidden',
+            borderRadius: '8px',
+            backgroundColor: '#111'
+          }}>
+            <iframe
+              src={videoEmbedUrl}
+              title="Video of the Week"
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                border: 0
+              }}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+          </div>
+        </div>
+      )}
 
       <div className="category-tabs">
         {categories.map(category => (
@@ -593,6 +687,8 @@ export default function App() {
                   setCustomerName={setCustomerName}
                   customerPhone={customerPhone}
                   setCustomerPhone={setCustomerPhone}
+                  customerEmail={customerEmail}
+                  setCustomerEmail={setCustomerEmail}
                   collectionTime={collectionTime}
                   setCollectionTime={setCollectionTime}
                   specialRequests={specialRequests}
@@ -622,6 +718,14 @@ export default function App() {
                   placeholder="Phone Number"
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(e.target.value)}
+                  required
+                />
+                <input
+                  type="email"
+                  name="Email"
+                  placeholder="Email Address (for 'Order Ready' alert)"
+                  value={customerEmail}
+                  onChange={(e) => setCustomerEmail(e.target.value)}
                   required
                 />
 
@@ -682,7 +786,7 @@ export default function App() {
                 />
 
                 <p className="privacy-note">
-                  We will only use this number to text you when your order is ready for collection.
+                  We will only use your details to let you know when your order is ready for collection.
                 </p>
 
                 <button type="submit" className="submit-btn" disabled={cart.length === 0 || isSubmitting}>
